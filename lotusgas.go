@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"math"
 	"os"
 	"strings"
@@ -23,26 +24,32 @@ type Tally struct {
 // Analyses a JSON object containing a Lotus execution trace to determine the self and total gas consumption
 // of each message execution in the call tree.
 //
-// Usage: go run github.com/anorth/crongas --depth 2 <json-filename>
+// Usage: go run github.com/anorth/lotusgas --depth 2 <json-filename>
 func main() {
 	displayDepth := flag.Int("depth", math.MaxInt32, "max depth to display")
 	flag.Parse()
 	inPath := flag.Arg(0)
 
 	full := Load(inPath)
-	trace := full["value"].(map[string]interface{})["active"].(map[string]interface{})["ExecutionTrace"].(map[string]interface{})
-	tallies := TallyCalls(trace, 0)
-	totalGas := uint64(0)
-	p := message.NewPrinter(language.English)
-	for _, r := range tallies {
-		totalGas += r.SelfGas
-		if r.Depth < *displayDepth {
-			indent := strings.Repeat("  ", r.Depth)
-			_, _ = p.Printf("%s%s->%s:%v self:%v total:%v\n", indent, r.From, r.To, r.Method, r.SelfGas, r.TotalGas)
+	topLevelMsgs := full["Trace"].([]interface{})
+	_, _ = fmt.Printf("call\tself\ttotal\n") // TSV header row
+	for _, topMsg := range topLevelMsgs {
+		topMsg := topMsg.(map[string]interface{})
+		label := topMsg["MsgCid"].(map[string]interface{})["/"]
+		trace := topMsg["ExecutionTrace"].(map[string]interface{})
+		tallies := TallyCalls(trace, 0)
+		totalGas := uint64(0)
+		p := message.NewPrinter(language.English) // Pretty-print big numbers with thousands separators.
+		_, _ = p.Printf("%s\n", label)
+		for _, r := range tallies {
+			totalGas += r.SelfGas
+			if r.Depth < *displayDepth {
+				indent := strings.Repeat("  ", r.Depth)
+				method := fmt.Sprintf("%d", r.Method) // Don't group thousands in method number
+				_, _ = p.Printf("%s%s→%s:%s\t%12v\t%12v\n", indent, r.From, r.To, method, r.SelfGas, r.TotalGas)
+			}
 		}
 	}
-	_, _ = p.Printf("Total gas: %d\n", totalGas)
-
 }
 
 // Reads and unmarshals the JSON into memory.

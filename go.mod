@@ -1,4 +1,4 @@
-module github.com/anorth/crongas
+module github.com/anorth/lotusgas
 
 go 1.19
 
